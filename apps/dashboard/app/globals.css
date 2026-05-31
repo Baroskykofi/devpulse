@@ -1,0 +1,89 @@
+/* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base:       #0b0e14;
+  --bg-surface:    #0d1018;
+  --bg-raised:     #111623;
+  --bg-input:      #141929;
+  --border:        #1e2535;
+  --border-mid:    #273045;
+
+  --text-primary:  #f0f4ff;
+  --text-body:     #c9d1e0;
+  --text-muted:    #8a96b0;
+  --text-dim:      #5a6480;
+  --text-ghost:    #3a4460;
+
+  --red:           #e05a3a;
+  --red-dim:       rgba(224, 90, 58, 0.12);
+  --red-border:    rgba(224, 90, 58, 0.25);
+
+  --amber:         #f0a93a;
+  --amber-dim:     rgba(240, 169, 58, 0.12);
+
+  --green:         #3ecf8e;
+  --green-dim:     rgba(62, 207, 142, 0.10);
+
+  --blue:          #6395ff;
+  --blue-dim:      rgba(99, 149, 255, 0.10);
+  --blue-border:   rgba(99, 149, 255, 0.20);
+
+  --purple:        #af6eff;
+  --purple-dim:    rgba(175, 110, 255, 0.10);
+
+  --font-display:  var(--font-syne), system-ui, sans-serif;
+  --font-code:     var(--font-mono), "Courier New", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg-base);
+  color: var(--text-body);
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-mid); }
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* Utility classes */
+.font-mono { font-family: var(--font-code); }
+
+/* Live dot pulse */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.75); }
+}
+
+/* Typing cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* Progress bar shimmer */
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position:  200% center; }
+}
+
+/* Step fade-in */
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

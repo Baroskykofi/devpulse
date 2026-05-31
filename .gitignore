@@ -1,0 +1,85 @@
+# DevPulse .gitignore
+
+# ── Environment & Secrets ────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ── Deployment Outputs ───────────────────────────────────────────────
+infra/phase1-outputs.env
+infra/phase2-outputs.env
+infra/*.env
+
+# ── Node.js ──────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+lerna-debug.log*
+.npm
+.yarn-integrity
+
+# ── Next.js ──────────────────────────────────────────────────────────
+.next/
+out/
+build/
+dist/
+.vercel
+.turbo
+
+# ── Firebase ─────────────────────────────────────────────────────────
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# ── Google Cloud ─────────────────────────────────────────────────────
+.gcloud/
+*.json.backup
+
+# ── IDE & Editor ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.claude/
+
+# ── OS Files ─────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+
+# ── Build & Temp Files ───────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+.cache/
+.temp/
+
+# ── Docker ───────────────────────────────────────────────────────────
+.dockerignore
+Dockerfile.old
+
+# ── Backup Files ─────────────────────────────────────────────────────
+*.bak
+*.backup
+*~
+
+# ── Python (for scripts) ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+
+# Keep example files
+!.env.example
+!.env.*.example

@@ -1,0 +1,135 @@
+[
+  {
+    "name": "get_problem_details",
+    "description": "Fetch full context for a Dynatrace problem ID from the Dynatrace MCP server. Returns title, severity, start time, status, and Davis AI root cause analysis.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "problemId": { "type": "string", "description": "The Dynatrace problem ID e.g. P-230948" }
+      },
+      "required": ["problemId"]
+    }
+  },
+  {
+    "name": "get_affected_entities",
+    "description": "Get all services, hosts, and processes implicated in a Dynatrace problem. Returns entity names, types, and health status.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "problemId": { "type": "string", "description": "The Dynatrace problem ID" }
+      },
+      "required": ["problemId"]
+    }
+  },
+  {
+    "name": "query_metrics",
+    "description": "Fetch time-series metric data from Dynatrace for a specific entity and time window. Use metricSelector: 'builtin:service.errors.total.rate' for error rate, 'builtin:service.response.time:percentile(99)' for p99 latency.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "entityId":       { "type": "string", "description": "Dynatrace entity ID" },
+        "metricSelector": { "type": "string", "description": "Dynatrace metric selector" },
+        "from":           { "type": "string", "description": "Start time ISO 8601 or relative e.g. now-5m" },
+        "to":             { "type": "string", "description": "End time ISO 8601 or relative e.g. now" }
+      },
+      "required": ["entityId", "metricSelector", "from", "to"]
+    }
+  },
+  {
+    "name": "fetch_logs",
+    "description": "Fetch recent log lines from affected entities via Dynatrace. Pass filter: 'ERROR' to focus on errors. Returns raw log lines as strings.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "entityId": { "type": "string" },
+        "from":     { "type": "string" },
+        "to":       { "type": "string" },
+        "filter":   { "type": "string", "description": "Log filter string e.g. 'ERROR'" }
+      },
+      "required": ["entityId", "from", "to"]
+    }
+  },
+  {
+    "name": "list_recent_commits",
+    "description": "List commits on a GitHub repo branch within the last N hours. Merge commits are filtered out. Use to find deploys that may have caused the incident.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "owner":     { "type": "string" },
+        "repo":      { "type": "string" },
+        "branch":    { "type": "string", "default": "main" },
+        "hoursBack": { "type": "number", "default": 24 }
+      },
+      "required": ["owner", "repo"]
+    }
+  },
+  {
+    "name": "get_commit_diff",
+    "description": "Get the full diff for a specific commit. Returns changed files with patches. Use to identify dangerous changes: removed env vars, middleware refactors, schema changes.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "owner": { "type": "string" },
+        "repo":  { "type": "string" },
+        "sha":   { "type": "string", "description": "Full or short commit SHA" }
+      },
+      "required": ["owner", "repo", "sha"]
+    }
+  },
+  {
+    "name": "revert_commit",
+    "description": "DESTRUCTIVE. Creates a revert commit and pushes it. Only call this AFTER approvalStatus is confirmed as 'approved' in Firestore. Will throw an error if approval is not present.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "owner":      { "type": "string" },
+        "repo":       { "type": "string" },
+        "sha":        { "type": "string", "description": "SHA of the commit to revert" },
+        "branch":     { "type": "string", "default": "main" },
+        "incidentId": { "type": "string", "description": "Firestore incident ID — used to verify approval" }
+      },
+      "required": ["owner", "repo", "sha", "incidentId"]
+    }
+  },
+  {
+    "name": "post_incident_summary",
+    "description": "Post a structured incident summary to the #on-call Slack channel with Approve/Reject buttons. Call this after forming the recommendation.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "incidentId": { "type": "string", "description": "Firestore incident ID — used to fetch the full incident and build the Slack message" }
+      },
+      "required": ["incidentId"]
+    }
+  },
+  {
+    "name": "write_reasoning_step",
+    "description": "Append a reasoning step to the incident's Firestore steps subcollection. Call before and after every significant action. The dashboard streams these steps in real time.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "incidentId": { "type": "string" },
+        "phase":      { "type": "string", "enum": ["observe", "correlate", "hypothesize", "recommend", "execute", "waiting"] },
+        "label":      { "type": "string", "description": "Short description of this step e.g. 'Pulling problem context from Dynatrace'" },
+        "content":    { "type": "string", "description": "Full narrative of the agent's reasoning for this step" },
+        "toolCalls":  {
+          "type": "array",
+          "description": "Tool calls made during this step",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name":   { "type": "string", "description": "Tool name + key args e.g. 'get_problem_details(P-230948)'" },
+              "result": { "type": "string", "description": "Result summary e.g. '200 OK' or '3 entities'" }
+            }
+          }
+        },
+        "logLines": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Raw log lines from fetch_logs. Include timestamps. Max 20 lines."
+        }
+      },
+      "required": ["incidentId", "phase", "label", "content"]
+    }
+  }
+]

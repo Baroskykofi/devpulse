@@ -1,0 +1,42 @@
+{
+  "bad-deploy": {
+    "incident": {
+      "status": "active",
+      "severity": "critical",
+      "title": "Error rate spike — todo-api (Cloud Run)",
+      "service": "todo-api",
+      "dynatraceProblemId": "P-REPLAY-001",
+      "metrics": { "errorRate": 14.2, "p99Latency": 3840, "requestsPerMin": 412, "instanceCount": 3 }
+    }
+  },
+  "ext-outage": {
+    "incident": {
+      "status": "active",
+      "severity": "critical",
+      "title": "External dependency returning 503 — todo-api",
+      "service": "todo-api",
+      "dynatraceProblemId": "P-REPLAY-002",
+      "metrics": { "errorRate": 8.7, "p99Latency": 5100, "requestsPerMin": 390, "instanceCount": 3 }
+    }
+  },
+  "traffic-spike": {
+    "incident": {
+      "status": "active",
+      "severity": "warning",
+      "title": "High latency due to traffic spike — todo-api",
+      "service": "todo-api",
+      "dynatraceProblemId": "P-REPLAY-003",
+      "metrics": { "errorRate": 1.2, "p99Latency": 4200, "requestsPerMin": 1840, "instanceCount": 3 }
+    }
+  },
+  "missing-env": {
+    "incident": {
+      "status": "active",
+      "severity": "critical",
+      "title": "Database connection failures — missing env var after config push",
+      "service": "todo-api",
+      "dynatraceProblemId": "P-REPLAY-004",
+      "metrics": { "errorRate": 22.0, "p99Latency": 1200, "requestsPerMin": 380, "instanceCount": 3 }
+    }
+  }
+}
