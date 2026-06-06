@@ -184,7 +184,11 @@ app.post('/write_reasoning_step', async (req, res) => {
       });
     }
 
-    const firestore = new Firestore();
+    // Initialize Firestore with explicit project ID (trim whitespace)
+    const projectId = (process.env.FIRESTORE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '').trim();
+    const firestore = new Firestore({
+      projectId: projectId
+    });
 
     const step = {
       phase,

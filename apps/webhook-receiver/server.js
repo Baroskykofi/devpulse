@@ -6,8 +6,11 @@ const express = require('express');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
-// Initialize Firebase
-initializeApp();
+// Initialize Firebase with explicit project ID (trim whitespace)
+const projectId = (process.env.FIRESTORE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '').trim();
+initializeApp({
+  projectId: projectId
+});
 const db = getFirestore();
 
 const app = express();
