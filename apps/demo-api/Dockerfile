@@ -7,7 +7,7 @@ RUN apk add --no-cache curl bash
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy application code
 COPY . .
