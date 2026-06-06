@@ -1,0 +1,68 @@
+name: Deploy Dynatrace Tools
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/dynatrace-tools/**'
+      - '.github/workflows/deploy-dynatrace-tools.yml'
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: us-central1
+
+jobs:
+  deploy:
+    name: Deploy Tool Functions
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      matrix:
+        tool:
+          - get_problem_details
+          - get_affected_entities
+          - query_metrics
+          - fetch_logs
+          - write_reasoning_step
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy ${{ matrix.tool }}
+        working-directory: apps/dynatrace-tools
+        run: |
+          gcloud functions deploy ${{ matrix.tool }} \
+            --gen2 \
+            --runtime nodejs20 \
+            --region ${{ env.GCP_REGION }} \
+            --source . \
+            --entry-point ${{ matrix.tool }} \
+            --trigger-http \
+            --allow-unauthenticated \
+            --set-env-vars DYNATRACE_ENVIRONMENT_ID=${{ secrets.DYNATRACE_ENVIRONMENT_ID }} \
+            --set-env-vars DYNATRACE_API_KEY=${{ secrets.DYNATRACE_API_KEY }} \
+            --set-env-vars FIRESTORE_PROJECT_ID=${{ secrets.FIRESTORE_PROJECT_ID }} \
+            --quiet
+
+      - name: Get Function URL
+        run: |
+          URL=$(gcloud functions describe ${{ matrix.tool }} \
+            --gen2 \
+            --region ${{ env.GCP_REGION }} \
+            --format 'value(serviceConfig.uri)')
+          echo "### ✅ ${{ matrix.tool }} deployed!" >> $GITHUB_STEP_SUMMARY
+          echo "URL: $URL" >> $GITHUB_STEP_SUMMARY

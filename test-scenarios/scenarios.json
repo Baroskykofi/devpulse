@@ -1,0 +1,263 @@
+{
+  "scenario-a-bad-deploy": {
+    "name": "Scenario A: Bad Deploy (500 Errors)",
+    "description": "A recent deployment introduces a code bug causing 500 errors. Agent should ROLLBACK with high confidence.",
+    "incident": {
+      "status": "active",
+      "severity": "critical",
+      "title": "Error rate spike on demo-api",
+      "service": "demo-api",
+      "dynatraceProblemId": "P-SCENARIO-A",
+      "metrics": {
+        "errorRate": 87.5,
+        "p99Latency": 450,
+        "requestsPerMin": 120,
+        "instanceCount": 2
+      }
+    },
+    "dynatraceData": {
+      "problemDetails": {
+        "problemId": "P-SCENARIO-A",
+        "title": "Error rate increase on demo-api",
+        "severity": "ERROR",
+        "startTime": "2026-05-31T10:00:00Z",
+        "state": "OPEN",
+        "rootCause": "TypeError in POST /todos endpoint"
+      },
+      "affectedEntities": [
+        {
+          "entityId": "SERVICE-DEMO-API",
+          "name": "demo-api",
+          "type": "SERVICE"
+        }
+      ],
+      "logs": [
+        "2026-05-31T10:00:15Z ERROR TypeError: Cannot read property 'text' of undefined",
+        "2026-05-31T10:00:15Z ERROR     at POST /todos (index.js:45:23)",
+        "2026-05-31T10:00:16Z ERROR TypeError: Cannot read property 'text' of undefined",
+        "2026-05-31T10:00:16Z ERROR     at POST /todos (index.js:45:23)",
+        "2026-05-31T10:00:17Z ERROR TypeError: Cannot read property 'text' of undefined"
+      ]
+    },
+    "githubData": {
+      "recentCommits": [
+        {
+          "sha": "abc1234",
+          "fullSha": "abc1234567890abcdef1234567890abcdef12345",
+          "message": "Fix: Update todo validation logic",
+          "author": "developer",
+          "timestamp": "2026-05-31T09:58:00Z"
+        },
+        {
+          "sha": "def5678",
+          "fullSha": "def5678901234567890abcdef1234567890abcdef",
+          "message": "Docs: Update README",
+          "author": "developer",
+          "timestamp": "2026-05-30T15:30:00Z"
+        }
+      ],
+      "commitDiff": {
+        "sha": "abc1234",
+        "message": "Fix: Update todo validation logic",
+        "files": [
+          {
+            "filename": "apps/demo-api/index.js",
+            "status": "modified",
+            "additions": 3,
+            "deletions": 2,
+            "patch": "@@ -42,7 +42,8 @@ app.post(\"/todos\", (req, res) => {\n   if (chaos.mode === \"errors\") {\n     throw new Error(\"Chaos mode: errors enabled\");\n   }\n-  const todo = req.body;\n+  // BUG: Changed from req.body to req.body.todo\n+  const todo = req.body.todo;\n   if (!todo || !todo.text) {\n     return res.status(400).json({ error: \"text is required\" });\n   }"
+          }
+        ]
+      }
+    },
+    "expectedOutcome": {
+      "hypothesis": {
+        "suspect": "abc1234",
+        "confidence": "high"
+      },
+      "recommendation": {
+        "action": "ROLLBACK"
+      }
+    }
+  },
+  "scenario-b-external-dependency": {
+    "name": "Scenario B: External Dependency Failure",
+    "description": "External API returns 503 errors. Agent should ESCALATE with clear context (not a code issue).",
+    "incident": {
+      "status": "active",
+      "severity": "warning",
+      "title": "Increased error rate on /external endpoint",
+      "service": "demo-api",
+      "dynatraceProblemId": "P-SCENARIO-B",
+      "metrics": {
+        "errorRate": 45.2,
+        "p99Latency": 5200,
+        "requestsPerMin": 85,
+        "instanceCount": 2
+      }
+    },
+    "dynatraceData": {
+      "problemDetails": {
+        "problemId": "P-SCENARIO-B",
+        "title": "Error rate increase on /external endpoint",
+        "severity": "ERROR",
+        "startTime": "2026-05-31T11:30:00Z",
+        "state": "OPEN",
+        "rootCause": "HTTP 503 from external service"
+      },
+      "affectedEntities": [
+        {
+          "entityId": "SERVICE-DEMO-API",
+          "name": "demo-api",
+          "type": "SERVICE"
+        }
+      ],
+      "logs": [
+        "2026-05-31T11:30:15Z ERROR External API request failed: 503 Service Unavailable",
+        "2026-05-31T11:30:16Z ERROR GET /external returned 500 after external call failed",
+        "2026-05-31T11:30:18Z ERROR External API request failed: 503 Service Unavailable",
+        "2026-05-31T11:30:20Z ERROR Connection timeout to https://jsonplaceholder.typicode.com"
+      ]
+    },
+    "githubData": {
+      "recentCommits": [],
+      "commitDiff": null
+    },
+    "expectedOutcome": {
+      "hypothesis": {
+        "suspect": "external-dependency-or-load",
+        "confidence": "medium"
+      },
+      "recommendation": {
+        "action": "ESCALATE"
+      }
+    }
+  },
+  "scenario-c-traffic-spike": {
+    "name": "Scenario C: Traffic Spike (Performance Degradation)",
+    "description": "Sudden traffic increase causes latency. Agent should ESCALATE and recommend scale-up.",
+    "incident": {
+      "status": "active",
+      "severity": "warning",
+      "title": "Response time degradation on demo-api",
+      "service": "demo-api",
+      "dynatraceProblemId": "P-SCENARIO-C",
+      "metrics": {
+        "errorRate": 2.1,
+        "p99Latency": 8500,
+        "requestsPerMin": 850,
+        "instanceCount": 2
+      }
+    },
+    "dynatraceData": {
+      "problemDetails": {
+        "problemId": "P-SCENARIO-C",
+        "title": "Response time degradation",
+        "severity": "PERFORMANCE",
+        "startTime": "2026-05-31T14:00:00Z",
+        "state": "OPEN",
+        "rootCause": "High request volume"
+      },
+      "affectedEntities": [
+        {
+          "entityId": "SERVICE-DEMO-API",
+          "name": "demo-api",
+          "type": "SERVICE"
+        }
+      ],
+      "logs": [
+        "2026-05-31T14:00:05Z WARN Request queue depth: 45",
+        "2026-05-31T14:00:10Z WARN Request queue depth: 67",
+        "2026-05-31T14:00:15Z INFO GET /todos responded in 8234ms",
+        "2026-05-31T14:00:20Z WARN CPU usage: 92%"
+      ]
+    },
+    "githubData": {
+      "recentCommits": [],
+      "commitDiff": null
+    },
+    "expectedOutcome": {
+      "hypothesis": {
+        "suspect": "external-dependency-or-load",
+        "confidence": "medium"
+      },
+      "recommendation": {
+        "action": "ESCALATE",
+        "description": "Scale up instances or optimize performance"
+      }
+    }
+  },
+  "scenario-d-missing-env-var": {
+    "name": "Scenario D: Missing Environment Variable",
+    "description": "Config change removed required env var. Agent should detect and propose PR fix.",
+    "incident": {
+      "status": "active",
+      "severity": "critical",
+      "title": "Service failing to start after config update",
+      "service": "demo-api",
+      "dynatraceProblemId": "P-SCENARIO-D",
+      "metrics": {
+        "errorRate": 100,
+        "p99Latency": 0,
+        "requestsPerMin": 0,
+        "instanceCount": 0
+      }
+    },
+    "dynatraceData": {
+      "problemDetails": {
+        "problemId": "P-SCENARIO-D",
+        "title": "Service unavailable - failed health checks",
+        "severity": "AVAILABILITY",
+        "startTime": "2026-05-31T16:00:00Z",
+        "state": "OPEN",
+        "rootCause": "Application startup failure"
+      },
+      "affectedEntities": [
+        {
+          "entityId": "SERVICE-DEMO-API",
+          "name": "demo-api",
+          "type": "SERVICE"
+        }
+      ],
+      "logs": [
+        "2026-05-31T16:00:02Z ERROR Application failed to start",
+        "2026-05-31T16:00:02Z ERROR ReferenceError: DATABASE_URL is not defined",
+        "2026-05-31T16:00:02Z ERROR     at startup (index.js:10:15)",
+        "2026-05-31T16:00:05Z ERROR Health check failed: connection refused"
+      ]
+    },
+    "githubData": {
+      "recentCommits": [
+        {
+          "sha": "xyz7890",
+          "fullSha": "xyz7890abcdef1234567890abcdef1234567890ab",
+          "message": "Config: Clean up environment variables",
+          "author": "developer",
+          "timestamp": "2026-05-31T15:58:00Z"
+        }
+      ],
+      "commitDiff": {
+        "sha": "xyz7890",
+        "message": "Config: Clean up environment variables",
+        "files": [
+          {
+            "filename": ".env.example",
+            "status": "modified",
+            "additions": 0,
+            "deletions": 2,
+            "patch": "@@ -5,8 +5,6 @@\n GCP_REGION=us-central1\n \n # Database\n-DATABASE_URL=postgresql://...\n-DATABASE_POOL_SIZE=10\n \n # Optional\n ENABLE_LOGGING=true"
+          }
+        ]
+      }
+    },
+    "expectedOutcome": {
+      "hypothesis": {
+        "suspect": "xyz7890",
+        "confidence": "high"
+      },
+      "recommendation": {
+        "action": "ROLLBACK"
+      }
+    }
+  }
+}

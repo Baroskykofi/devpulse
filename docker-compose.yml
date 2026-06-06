@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Demo API - Express.js service
+  demo-api:
+    build:
+      context: ./apps/demo-api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - NODE_ENV=development
+      - DT_TENANT=${DYNATRACE_ENVIRONMENT_ID}
+      - DT_API_TOKEN=${DYNATRACE_API_TOKEN}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks:
+      - devpulse
+
+  # Webhook Receiver - Cloud Function (local simulation)
+  webhook-receiver:
+    build:
+      context: ./apps/webhook-receiver
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - PORT=8080
+      - FIRESTORE_PROJECT_ID=${FIRESTORE_PROJECT_ID}
+      - AGENT_BUILDER_PROJECT=${GCP_PROJECT_ID}
+      - AGENT_BUILDER_LOCATION=${GCP_REGION:-us-central1}
+      - AGENT_BUILDER_AGENT_ID=${AGENT_BUILDER_AGENT_ID}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
+    volumes:
+      - ./service-account-key.json:/app/service-account-key.json:ro
+    networks:
+      - devpulse
+
+  # Dynatrace Tools - Combined Cloud Functions
+  dynatrace-tools:
+    build:
+      context: ./apps/dynatrace-tools
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      - PORT=8080
+      - DYNATRACE_ENVIRONMENT_ID=${DYNATRACE_ENVIRONMENT_ID}
+      - DYNATRACE_API_KEY=${DYNATRACE_API_KEY}
+      - FIRESTORE_PROJECT_ID=${FIRESTORE_PROJECT_ID}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
+    volumes:
+      - ./service-account-key.json:/app/service-account-key.json:ro
+    networks:
+      - devpulse
+
+  # Dashboard - Next.js UI
+  dashboard:
+    build:
+      context: ./apps/dashboard
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
+        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+    depends_on:
+      - demo-api
+      - webhook-receiver
+    networks:
+      - devpulse
+
+networks:
+  devpulse:
+    driver: bridge
