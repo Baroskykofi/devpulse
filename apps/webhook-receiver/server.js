@@ -97,13 +97,16 @@ app.post('/', async (req, res) => {
         problemId,
         title: problemTitle || `Problem ${problemId}`,
         severity: mapSeverity(severityLevel),
-        status: 'open',
+        status: 'active',  // Dashboard expects: 'active' | 'resolved' | 'escalated'
         state,
+        service: impactedEntityNames?.[0] || 'unknown-service',  // Required by dashboard
+        dynatraceProblemId: problemId,  // Required by dashboard
         affectedEntities: impactedEntityNames || [],
         metrics,
         hypothesis: null,
         recommendation: null,
         approvalStatus: 'pending',
+        startedAt: FieldValue.serverTimestamp(),  // Dashboard queries by this field
         createdAt: FieldValue.serverTimestamp(),
         lastUpdated: FieldValue.serverTimestamp(),
       };
