@@ -30,6 +30,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
+# Create empty public directory if it doesn't exist
+RUN mkdir -p public
+
 # Runtime
 FROM base AS runner
 WORKDIR /app
