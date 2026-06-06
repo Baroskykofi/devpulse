@@ -2,12 +2,15 @@
   "name": "dynatrace-tools",
   "version": "1.0.0",
   "description": "Dynatrace tools for Agent Builder",
-  "main": "index.js",
+  "main": "server.js",
   "engines": {
     "node": "20"
   },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
-    "@google-cloud/functions-framework": "^3.0.0",
+    "express": "^4.19.2",
     "@google-cloud/firestore": "^7.0.0"
   }
 }
