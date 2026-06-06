@@ -1,0 +1,216 @@
+# Cloud Build configuration for DevPulse
+# Deploys all services to Cloud Run in parallel from a single trigger
+
+steps:
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # BUILD PHASE - Build all Docker images in parallel
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Build Demo API
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-demo-api'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-demo-api:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-demo-api:latest'
+      - './apps/demo-api'
+    waitFor: ['-']
+
+  # Build Webhook Receiver
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-webhook-receiver'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-webhook-receiver:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-webhook-receiver:latest'
+      - './apps/webhook-receiver'
+    waitFor: ['-']
+
+  # Build Dynatrace Tools
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-dynatrace-tools'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-dynatrace-tools:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-dynatrace-tools:latest'
+      - './apps/dynatrace-tools'
+    waitFor: ['-']
+
+  # Build Dashboard
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-dashboard'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-dashboard:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/devpulse-dashboard:latest'
+      - './apps/dashboard'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_NEXT_PUBLIC_FIREBASE_PROJECT_ID}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID}'
+    waitFor: ['-']
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # PUSH PHASE - Push all images to GCR
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-demo-api'
+    args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/devpulse-demo-api']
+    waitFor: ['build-demo-api']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-webhook-receiver'
+    args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/devpulse-webhook-receiver']
+    waitFor: ['build-webhook-receiver']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-dynatrace-tools'
+    args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/devpulse-dynatrace-tools']
+    waitFor: ['build-dynatrace-tools']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-dashboard'
+    args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/devpulse-dashboard']
+    waitFor: ['build-dashboard']
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # DEPLOY PHASE - Deploy all services to Cloud Run in parallel
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Deploy Demo API
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-demo-api'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'devpulse-demo-api'
+      - '--image=gcr.io/$PROJECT_ID/devpulse-demo-api:$SHORT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--set-env-vars=DT_TENANT=${_DYNATRACE_ENVIRONMENT_ID}'
+      - '--set-env-vars=DT_API_TOKEN=${_DYNATRACE_API_TOKEN}'
+      - '--set-env-vars=DT_LOGLEVELCON=INFO'
+    waitFor: ['push-demo-api']
+
+  # Deploy Webhook Receiver
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-webhook-receiver'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'devpulse-webhook-receiver'
+      - '--image=gcr.io/$PROJECT_ID/devpulse-webhook-receiver:$SHORT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--set-env-vars=FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID}'
+      - '--set-env-vars=AGENT_BUILDER_PROJECT=$PROJECT_ID'
+      - '--set-env-vars=AGENT_BUILDER_LOCATION=${_REGION}'
+      - '--set-env-vars=AGENT_BUILDER_AGENT_ID=${_AGENT_BUILDER_AGENT_ID}'
+    waitFor: ['push-webhook-receiver']
+
+  # Deploy Dynatrace Tools
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-dynatrace-tools'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'devpulse-dynatrace-tools'
+      - '--image=gcr.io/$PROJECT_ID/devpulse-dynatrace-tools:$SHORT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--set-env-vars=DYNATRACE_ENVIRONMENT_ID=${_DYNATRACE_ENVIRONMENT_ID}'
+      - '--set-env-vars=DYNATRACE_API_KEY=${_DYNATRACE_API_KEY}'
+      - '--set-env-vars=FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID}'
+    waitFor: ['push-dynatrace-tools']
+
+  # Deploy Dashboard
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-dashboard'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'devpulse-dashboard'
+      - '--image=gcr.io/$PROJECT_ID/devpulse-dashboard:$SHORT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=3000'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+    waitFor: ['push-dashboard']
+
+# Store built images in Google Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/devpulse-demo-api:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/devpulse-demo-api:latest'
+  - 'gcr.io/$PROJECT_ID/devpulse-webhook-receiver:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/devpulse-webhook-receiver:latest'
+  - 'gcr.io/$PROJECT_ID/devpulse-dynatrace-tools:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/devpulse-dynatrace-tools:latest'
+  - 'gcr.io/$PROJECT_ID/devpulse-dashboard:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/devpulse-dashboard:latest'
+
+# Build options
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+# Timeout for the entire build (20 minutes)
+timeout: 1200s
+
+# Substitution variables (must be provided by Cloud Build trigger)
+# Configure these in Cloud Build Trigger → Advanced → Substitution variables
+substitutions:
+  _REGION: 'us-central1'
+  _DYNATRACE_ENVIRONMENT_ID: 'YOUR_DYNATRACE_ENVIRONMENT_ID'
+  _DYNATRACE_API_TOKEN: 'YOUR_DYNATRACE_API_TOKEN'
+  _DYNATRACE_API_KEY: 'YOUR_DYNATRACE_API_KEY'
+  _FIRESTORE_PROJECT_ID: 'YOUR_FIRESTORE_PROJECT_ID'
+  _AGENT_BUILDER_AGENT_ID: 'YOUR_AGENT_BUILDER_AGENT_ID'
+  _NEXT_PUBLIC_FIREBASE_API_KEY: 'YOUR_FIREBASE_API_KEY'
+  _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'YOUR_FIREBASE_AUTH_DOMAIN'
+  _NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'YOUR_FIREBASE_PROJECT_ID'
+  _NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'YOUR_FIREBASE_STORAGE_BUCKET'
+  _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: 'YOUR_FIREBASE_MESSAGING_SENDER_ID'
+  _NEXT_PUBLIC_FIREBASE_APP_ID: 'YOUR_FIREBASE_APP_ID'
