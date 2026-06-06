@@ -111,9 +111,7 @@ steps:
       - '--cpu=1'
       - '--min-instances=0'
       - '--max-instances=10'
-      - '--set-env-vars=DT_TENANT=${_DYNATRACE_ENVIRONMENT_ID}'
-      - '--set-env-vars=DT_API_TOKEN=${_DYNATRACE_API_TOKEN}'
-      - '--set-env-vars=DT_LOGLEVELCON=INFO'
+      - '--set-env-vars=DT_TENANT=${_DYNATRACE_ENVIRONMENT_ID},DT_API_TOKEN=${_DYNATRACE_API_TOKEN},DT_LOGLEVELCON=INFO'
     waitFor: ['push-demo-api']
 
   # Deploy Webhook Receiver
@@ -133,10 +131,7 @@ steps:
       - '--cpu=1'
       - '--min-instances=0'
       - '--max-instances=10'
-      - '--set-env-vars=FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID}'
-      - '--set-env-vars=AGENT_BUILDER_PROJECT=$PROJECT_ID'
-      - '--set-env-vars=AGENT_BUILDER_LOCATION=${_REGION}'
-      - '--set-env-vars=AGENT_BUILDER_AGENT_ID=${_AGENT_BUILDER_AGENT_ID}'
+      - '--set-env-vars=FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID},GOOGLE_CLOUD_PROJECT=${_FIRESTORE_PROJECT_ID},GCLOUD_PROJECT=${_FIRESTORE_PROJECT_ID},AGENT_BUILDER_PROJECT=$PROJECT_ID,AGENT_BUILDER_LOCATION=${_REGION},AGENT_BUILDER_AGENT_ID=${_AGENT_BUILDER_AGENT_ID}'
     waitFor: ['push-webhook-receiver']
 
   # Deploy Dynatrace Tools
@@ -156,9 +151,7 @@ steps:
       - '--cpu=1'
       - '--min-instances=0'
       - '--max-instances=10'
-      - '--set-env-vars=DYNATRACE_ENVIRONMENT_ID=${_DYNATRACE_ENVIRONMENT_ID}'
-      - '--set-env-vars=DYNATRACE_API_KEY=${_DYNATRACE_API_KEY}'
-      - '--set-env-vars=FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID}'
+      - '--set-env-vars=DYNATRACE_ENVIRONMENT_ID=${_DYNATRACE_ENVIRONMENT_ID},DYNATRACE_API_KEY=${_DYNATRACE_API_KEY},FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID},GOOGLE_CLOUD_PROJECT=${_FIRESTORE_PROJECT_ID},GCLOUD_PROJECT=${_FIRESTORE_PROJECT_ID}'
     waitFor: ['push-dynatrace-tools']
 
   # Deploy Dashboard
