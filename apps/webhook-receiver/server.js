@@ -34,21 +34,33 @@ async function fetchInitialMetrics(problemId) {
   return { errorRate: 0, p99Latency: 0, requestsPerMin: 0, instanceCount: 0 };
 }
 
-// ─── Invoke Agent Builder agent ───────────────────────────────────
+// ─── Invoke Agent Orchestrator ───────────────────────────────────
 async function invokeAgent(incidentId, problemId) {
-  // Agent invocation is handled by the agent-orchestrator in Phase 3
-  // For Phase 2, we just log that we would invoke the agent
-  console.log(`[agent] Would invoke agent for incident ${incidentId}, problem ${problemId}`);
+  const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL;
 
-  // TODO: Implement agent invocation when agent-orchestrator is deployed
-  // const { AgentsClient } = require('@google-cloud/agents');
-  // const client = new AgentsClient();
-  // const agentPath = client.agentPath(
-  //   process.env.AGENT_BUILDER_PROJECT,
-  //   process.env.AGENT_BUILDER_LOCATION,
-  //   process.env.AGENT_BUILDER_AGENT_ID
-  // );
-  // await client.streamingDetectIntent({ ... });
+  if (!ORCHESTRATOR_URL) {
+    console.warn(`[orchestrator] No ORCHESTRATOR_URL configured, skipping agent invocation`);
+    return;
+  }
+
+  try {
+    console.log(`[orchestrator] Invoking reasoning loop for incident ${incidentId}`);
+
+    // Fire-and-forget: don't await the full response to avoid blocking the webhook
+    fetch(ORCHESTRATOR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data: { incidentId, problemId }
+      }),
+    }).catch(err => {
+      console.error(`[orchestrator] invocation error for ${incidentId}:`, err.message);
+    });
+
+    console.log(`[orchestrator] Reasoning loop triggered for ${incidentId}`);
+  } catch (err) {
+    console.error(`[orchestrator] error invoking orchestrator for ${incidentId}:`, err.message);
+  }
 }
 
 // ─── Main webhook handler ─────────────────────────────────────────

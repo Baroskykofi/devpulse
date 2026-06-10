@@ -36,6 +36,20 @@ app.get('/healthz', (req, res) => {
   res.status(200).send('OK');
 });
 
+// OpenAPI spec endpoint (for Agent Builder configuration)
+app.get('/openapi.yaml', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const yamlPath = path.join(__dirname, 'openapi.yaml');
+
+  if (fs.existsSync(yamlPath)) {
+    res.setHeader('Content-Type', 'text/yaml');
+    res.sendFile(yamlPath);
+  } else {
+    res.status(404).json({ error: 'OpenAPI spec not found' });
+  }
+});
+
 // ─── Tool: get_problem_details ────────────────────────────────────────
 app.post('/get_problem_details', async (req, res) => {
   try {

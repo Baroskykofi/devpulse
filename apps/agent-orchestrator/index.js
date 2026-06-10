@@ -2,19 +2,29 @@
 // Cloud Function that orchestrates the agent reasoning loop
 // Invoked by webhook-receiver, manages agent state and tool execution
 
-const { onCall } = require("firebase-functions/v2/https");
+const { onRequest } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { initializeApp } = require("firebase-admin/app");
 
-initializeApp();
+// Initialize Firebase Admin with explicit project ID
+const projectId = (process.env.FIRESTORE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || '').trim();
+initializeApp({
+  projectId: projectId
+});
 const db = getFirestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 // ─── Agent Reasoning Orchestrator ─────────────────────────────────────
 // This orchestrator manages the 5-phase reasoning loop:
 // Observe → Correlate → Hypothesize → Recommend → Execute & Verify
 
-exports.runReasoningLoop = onCall(async (request) => {
-  const { incidentId, problemId } = request.data;
+exports.runReasoningLoop = onRequest(async (req, res) => {
+  // Handle HTTP request
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { incidentId, problemId } = req.body.data || req.body;
 
   if (!incidentId || !problemId) {
     throw new Error("incidentId and problemId are required");
@@ -29,7 +39,7 @@ exports.runReasoningLoop = onCall(async (request) => {
       throw new Error(`Incident ${incidentId} not found`);
     }
 
-    const data = incident.data();
+    let data = incident.data();
 
     // Initialize reasoning state if not present
     if (!data.reasoningState) {
@@ -40,25 +50,44 @@ exports.runReasoningLoop = onCall(async (request) => {
           startedAt: FieldValue.serverTimestamp(),
         },
       });
+      data.reasoningState = {
+        phase: "observe",
+        toolCallCount: 0,
+        startedAt: new Date(),
+      };
     }
 
-    // Execute the current phase
-    const phase = data.reasoningState?.phase || "observe";
-    const result = await executePhase(incidentId, problemId, phase, data);
+    // Execute all 5 phases in sequence
+    const phases = ["observe", "correlate", "hypothesize", "recommend"];
+    const results = {};
 
-    return { success: true, phase, result };
+    for (const phase of phases) {
+      console.log(`[orchestrator] Executing phase: ${phase}`);
+      const result = await executePhase(incidentId, problemId, phase, data);
+      results[phase] = result;
+
+      // Refresh incident data for next phase
+      const updatedIncident = await incidentRef.get();
+      data = updatedIncident.data();
+    }
+
+    return res.status(200).json({ success: true, phases: Object.keys(results), results });
   } catch (error) {
     console.error("[orchestrator] error:", error);
 
     // Write error to Firestore
-    await db.collection("incidents").doc(incidentId).collection("steps").add({
-      phase: "error",
-      label: "Agent error occurred",
-      content: `Error: ${error.message}`,
-      timestamp: FieldValue.serverTimestamp(),
-    });
+    try {
+      await db.collection("incidents").doc(incidentId).collection("steps").add({
+        phase: "error",
+        label: "Agent error occurred",
+        content: `Error: ${error.message}`,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } catch (firestoreError) {
+      console.error("[orchestrator] Failed to write error to Firestore:", firestoreError);
+    }
 
-    throw error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -121,13 +150,14 @@ async function observePhase(incidentId, problemId, incidentRef) {
         to: "now",
         filter: "ERROR",
       })
-    : { logLines: [] };
+    : { logs: [] };
 
   // Update incident with observed data
+  const logLines = logs.logs || [];
   await incidentRef.update({
     affectedEntities: affectedEntities.entities || [],
     metrics,
-    observedLogs: logs.logLines?.slice(0, 20) || [], // Max 20 lines
+    observedLogs: logLines.slice(0, 20), // Max 20 lines
     "reasoningState.phase": "correlate",
     "reasoningState.toolCallCount": FieldValue.increment(4),
   });
@@ -136,17 +166,17 @@ async function observePhase(incidentId, problemId, incidentRef) {
   await writeStep(incidentId, {
     phase: "observe",
     label: "Observation complete",
-    content: `Found ${affectedEntities.entities?.length || 0} affected entities. Error rate: ${metrics.errorRate}%, p99 latency: ${metrics.p99Latency}ms. Captured ${logs.logLines?.length || 0} error log lines.`,
+    content: `Found ${affectedEntities.entities?.length || 0} affected entities. Error rate: ${metrics.errorRate}%, p99 latency: ${metrics.p99Latency}ms. Captured ${logLines.length} error log lines.`,
     toolCalls: [
       { name: "get_problem_details", result: "Success" },
       { name: "get_affected_entities", result: `${affectedEntities.entities?.length || 0} entities` },
       { name: "query_metrics", result: "3 metrics" },
-      { name: "fetch_logs", result: `${logs.logLines?.length || 0} lines` },
+      { name: "fetch_logs", result: `${logLines.length} lines` },
     ],
-    logLines: logs.logLines?.slice(0, 10),
+    logLines: logLines.slice(0, 10).map(l => l.content || l),
   });
 
-  return { metrics, entities: affectedEntities.entities, logCount: logs.logLines?.length };
+  return { metrics, entities: affectedEntities.entities, logCount: logLines.length };
 }
 
 // ─── Phase 2: Correlate ───────────────────────────────────────────────
@@ -464,93 +494,243 @@ async function writeStep(incidentId, step) {
     .collection("steps")
     .add({
       ...step,
-      timestamp: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
 }
 
 async function callDynatraceTool(toolName, params) {
-  // Placeholder - in production this calls the Dynatrace API
-  // via MCP server or direct HTTP
-  console.log(`[dynatrace] ${toolName}`, params);
+  // Call the Dynatrace Tools API (Cloud Run service)
+  const TOOLS_URL = process.env.DYNATRACE_TOOLS_URL ||
+    "https://devpulse-dynatrace-tools-713434268138.us-central1.run.app";
 
-  // Mock responses for testing
-  switch (toolName) {
-    case "get_problem_details":
-      return {
-        problemId: params.problemId,
-        title: "Error rate increase on demo-api",
-        severity: "ERROR",
-        startTime: "2026-05-31T10:00:00Z",
-        state: "OPEN",
-      };
+  try {
+    console.log(`[dynatrace] Calling ${toolName} with params:`, params);
 
-    case "get_affected_entities":
-      return {
-        entities: [
-          {
-            entityId: "SERVICE-ABC123",
-            name: "demo-api",
-            type: "SERVICE",
-          },
-        ],
-      };
+    const response = await fetch(`${TOOLS_URL}/${toolName}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(params),
+    });
 
-    case "fetch_logs":
-      return {
-        logLines: [
-          "2026-05-31T10:00:15Z ERROR TypeError: Cannot read property 'text' of undefined",
-          "2026-05-31T10:00:16Z ERROR at POST /todos (index.js:45)",
-        ],
-      };
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Dynatrace tool ${toolName} failed: ${response.status} ${errorText}`);
+    }
 
-    default:
-      return {};
+    const result = await response.json();
+    console.log(`[dynatrace] ${toolName} result:`, result);
+    return result;
+  } catch (error) {
+    console.error(`[dynatrace] Error calling ${toolName}:`, error.message);
+    // Return safe defaults on error to prevent orchestrator from crashing
+    switch (toolName) {
+      case "get_problem_details":
+        return {
+          problemId: params.problemId,
+          title: "Unknown problem",
+          severity: "ERROR",
+          startTime: new Date().toISOString(),
+          state: "OPEN",
+        };
+      case "get_affected_entities":
+        return { entities: [], totalCount: 0 };
+      case "fetch_logs":
+        return { logs: [], totalCount: 0 };
+      default:
+        return {};
+    }
   }
 }
 
 async function callGitHubTool(toolName, params) {
-  // Placeholder - calls GitHub MCP server or GitHub API directly
-  console.log(`[github] ${toolName}`, params);
+  // Call GitHub API directly
+  const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+  const BASE_URL = "https://api.github.com";
 
-  // Mock responses
-  switch (toolName) {
-    case "list_recent_commits":
-      return {
-        commits: [
-          {
-            sha: "abc1234",
-            fullSha: "abc1234567890",
-            message: "Fix: Update todo validation",
-            author: "developer",
-            timestamp: "2026-05-31T09:58:00Z",
+  if (!GITHUB_TOKEN) {
+    console.error("[github] No GITHUB_TOKEN configured");
+    return { error: "GITHUB_TOKEN not configured" };
+  }
+
+  try {
+    console.log(`[github] Calling ${toolName} with params:`, params);
+
+    if (toolName === "list_recent_commits") {
+      const { owner, repo, branch = "main", hoursBack = 24 } = params;
+      const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+
+      const response = await fetch(
+        `${BASE_URL}/repos/${owner}/${repo}/commits?sha=${branch}&since=${since}&per_page=20`,
+        {
+          headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
           },
-        ],
-      };
+        }
+      );
 
-    case "get_commit_diff":
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      }
+
+      const commits = await response.json();
+      const filtered = commits
+        .filter((c) => !c.commit.message.startsWith("Merge"))
+        .map((c) => ({
+          sha: c.sha.slice(0, 7),
+          fullSha: c.sha,
+          message: c.commit.message.split("\n")[0],
+          author: c.commit.author.name,
+          timestamp: c.commit.author.date,
+          url: c.html_url,
+        }));
+
+      return { commits: filtered, count: filtered.length };
+    }
+
+    if (toolName === "get_commit_diff") {
+      const { owner, repo, sha } = params;
+
+      const response = await fetch(`${BASE_URL}/repos/${owner}/${repo}/commits/${sha}`, {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      }
+
+      const commit = await response.json();
+      const files = (commit.files || []).map((f) => ({
+        filename: f.filename,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        patch: f.patch ?? "(binary or too large)",
+      }));
+
       return {
-        sha: "abc1234",
-        message: "Fix: Update todo validation",
-        files: [
-          {
-            filename: "index.js",
-            status: "modified",
-            additions: 5,
-            deletions: 2,
-            patch: "@@ -42,7 +42,8 @@\n-  const todo = req.body;\n+  const todo = req.body.todo;",
-          },
-        ],
+        sha: commit.sha.slice(0, 7),
+        message: commit.commit.message,
+        author: commit.commit.author.name,
+        date: commit.commit.author.date,
+        files,
       };
+    }
 
-    case "revert_commit":
+    if (toolName === "revert_commit") {
+      const { owner, repo, sha, branch = "main", incidentId } = params;
+
+      // Safety gate: verify approval in Firestore
+      const snap = await db.collection("incidents").doc(incidentId).get();
+      if (!snap.exists) {
+        throw new Error(`Incident ${incidentId} not found in Firestore`);
+      }
+      const { approvalStatus } = snap.data();
+      if (approvalStatus !== "approved") {
+        throw new Error(
+          `Approval required. Current status: "${approvalStatus}". Must be "approved".`
+        );
+      }
+
+      // Get the commit to revert
+      const targetResponse = await fetch(`${BASE_URL}/repos/${owner}/${repo}/commits/${sha}`, {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+
+      if (!targetResponse.ok) {
+        throw new Error(`GitHub API error: ${targetResponse.status}`);
+      }
+
+      const target = await targetResponse.json();
+
+      // Get current HEAD
+      const headResponse = await fetch(`${BASE_URL}/repos/${owner}/${repo}/git/ref/heads/${branch}`, {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+
+      if (!headResponse.ok) {
+        throw new Error(`GitHub API error: ${headResponse.status}`);
+      }
+
+      const currentHead = await headResponse.json();
+      const currentHeadSha = currentHead.object.sha;
+
+      // Get the tree to revert to (parent of the bad commit)
+      const revertTree = target.parents[0]
+        ? (await (await fetch(`${BASE_URL}/repos/${owner}/${repo}/commits/${target.parents[0].sha}`, {
+            headers: {
+              Authorization: `Bearer ${GITHUB_TOKEN}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+          })).json()).commit.tree.sha
+        : target.commit.tree.sha;
+
+      // Create revert commit
+      const commitResponse = await fetch(`${BASE_URL}/repos/${owner}/${repo}/git/commits`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `revert: Revert "${target.commit.message.split("\n")[0]}"\n\nDevPulse automated rollback. Incident: ${incidentId}`,
+          tree: revertTree,
+          parents: [currentHeadSha],
+        }),
+      });
+
+      if (!commitResponse.ok) {
+        throw new Error(`GitHub API error: ${commitResponse.status} ${await commitResponse.text()}`);
+      }
+
+      const newCommit = await commitResponse.json();
+
+      // Update branch reference
+      const updateResponse = await fetch(`${BASE_URL}/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sha: newCommit.sha }),
+      });
+
+      if (!updateResponse.ok) {
+        throw new Error(`GitHub API error: ${updateResponse.status} ${await updateResponse.text()}`);
+      }
+
       return {
         ok: true,
-        revertSha: "xyz9876",
-        message: "Revert commit pushed successfully",
+        revertSha: newCommit.sha.slice(0, 7),
+        fullSha: newCommit.sha,
+        message: "Revert commit pushed. Cloud Build will deploy automatically.",
       };
+    }
 
-    default:
-      return {};
+    return { error: `Unknown GitHub tool: ${toolName}` };
+  } catch (error) {
+    console.error(`[github] Error calling ${toolName}:`, error.message);
+    return { error: error.message, commits: [], files: [] };
   }
 }
 
@@ -566,7 +746,13 @@ async function queryMetricsForEntity(entityId, startTime) {
 }
 
 async function postToSlack(incidentId, incidentData, hypothesis, recommendation) {
-  // Placeholder - posts to Slack webhook
+  const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
+
+  if (!SLACK_WEBHOOK_URL) {
+    console.log(`[slack] No SLACK_WEBHOOK_URL configured, skipping Slack notification`);
+    return null;
+  }
+
   console.log(`[slack] Posting incident ${incidentId} to Slack`);
 
   const message = {
@@ -607,39 +793,31 @@ async function postToSlack(incidentId, incidentData, hypothesis, recommendation)
         },
       },
       {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "✅ Approve",
-            },
-            style: "primary",
-            value: incidentId,
-            action_id: "approve_action",
-          },
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "❌ Reject",
-            },
-            style: "danger",
-            value: incidentId,
-            action_id: "reject_action",
-          },
-        ],
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*View in Dashboard:* https://devpulse-dashboard-713434268138.us-central1.run.app/incidents/${incidentId}`,
+        },
       },
     ],
   };
 
-  // Send to Slack (implement actual webhook call)
-  // await fetch(process.env.SLACK_WEBHOOK_URL, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(message),
-  // });
+  try {
+    const response = await fetch(SLACK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message),
+    });
 
-  return message;
+    if (!response.ok) {
+      console.error(`[slack] Webhook failed: ${response.status} ${await response.text()}`);
+    } else {
+      console.log(`[slack] Successfully posted to Slack`);
+    }
+
+    return message;
+  } catch (error) {
+    console.error(`[slack] Error posting to Slack:`, error.message);
+    return null;
+  }
 }

@@ -23,27 +23,33 @@ async function fetchInitialMetrics(problemId) {
   return { errorRate: 0, p99Latency: 0, requestsPerMin: 0, instanceCount: 0 };
 }
 
-// ─── Invoke Agent Builder agent ───────────────────────────────────
+// ─── Invoke Agent Orchestrator ───────────────────────────────────
 async function invokeAgent(incidentId, problemId) {
-  const client = new AgentsClient();
-  const agentPath = client.agentPath(
-    process.env.AGENT_BUILDER_PROJECT,
-    process.env.AGENT_BUILDER_LOCATION,
-    process.env.AGENT_BUILDER_AGENT_ID
-  );
+  const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL;
 
-  // Fire-and-forget: don't await the full agent response
-  client.streamingDetectIntent({
-    session: `${agentPath}/sessions/${incidentId}`,
-    queryInput: {
-      text: {
-        text: JSON.stringify({ incidentId, problemId }),
-        languageCode: "en",
-      },
-    },
-  }).catch(err => {
-    console.error(`[agent] invocation error for ${incidentId}:`, err.message);
-  });
+  if (!ORCHESTRATOR_URL) {
+    console.error(`[orchestrator] No ORCHESTRATOR_URL configured`);
+    return;
+  }
+
+  try {
+    console.log(`[orchestrator] Invoking reasoning loop for incident ${incidentId}`);
+
+    // Fire-and-forget: don't await the full response
+    fetch(ORCHESTRATOR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data: { incidentId, problemId }
+      }),
+    }).catch(err => {
+      console.error(`[orchestrator] invocation error for ${incidentId}:`, err.message);
+    });
+
+    console.log(`[orchestrator] Reasoning loop triggered for ${incidentId}`);
+  } catch (err) {
+    console.error(`[orchestrator] error invoking agent for ${incidentId}:`, err.message);
+  }
 }
 
 // ─── Main handler ─────────────────────────────────────────────────

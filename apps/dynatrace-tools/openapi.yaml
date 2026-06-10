@@ -1,0 +1,446 @@
+openapi: 3.0.0
+info:
+  title: DevPulse Dynatrace Tools API
+  description: |
+    Tools for Gemini Agent Builder to investigate incidents using Dynatrace observability data.
+    These tools enable the agent to:
+    - Retrieve problem details from Dynatrace
+    - Query metrics for affected services
+    - Fetch relevant logs
+    - Document reasoning steps in Firestore
+  version: 1.0.0
+  contact:
+    name: DevPulse Support
+
+servers:
+  - url: https://devpulse-dynatrace-tools-713434268138.us-central1.run.app
+    description: Production Cloud Run deployment
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      description: Check if the service is running
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  /get_problem_details:
+    post:
+      summary: Get Dynatrace problem details
+      description: |
+        Retrieves detailed information about a specific Dynatrace problem including:
+        - Problem ID, title, and severity
+        - Start and end times
+        - Current state (OPEN/RESOLVED)
+        - Impact level and affected entity count
+        - Root cause entity (if identified)
+      operationId: getProblemDetails
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - problemId
+              properties:
+                problemId:
+                  type: string
+                  description: The Dynatrace problem ID (e.g., "P-12345")
+                  example: "P-12345"
+      responses:
+        '200':
+          description: Problem details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  problemId:
+                    type: string
+                    example: "P-12345"
+                  title:
+                    type: string
+                    example: "Response time degradation"
+                  severity:
+                    type: string
+                    enum: [AVAILABILITY, ERROR, PERFORMANCE, RESOURCE_CONTENTION, CUSTOM_ALERT]
+                    example: "ERROR"
+                  startTime:
+                    type: integer
+                    format: int64
+                    description: Unix timestamp in milliseconds
+                    example: 1717689600000
+                  endTime:
+                    type: integer
+                    format: int64
+                    description: Unix timestamp in milliseconds (null if still open)
+                    example: null
+                  state:
+                    type: string
+                    enum: [OPEN, RESOLVED]
+                    example: "OPEN"
+                  impactLevel:
+                    type: string
+                    enum: [APPLICATION, SERVICE, INFRASTRUCTURE]
+                    example: "SERVICE"
+                  rootCause:
+                    type: string
+                    description: Name of the root cause entity
+                    example: "demo-api-service"
+                  affectedEntityCount:
+                    type: integer
+                    example: 3
+        '400':
+          description: Bad request - problemId is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /get_affected_entities:
+    post:
+      summary: Get affected entities
+      description: |
+        Retrieves the list of entities affected by a Dynatrace problem.
+        Returns up to 10 entities with their IDs, names, and types.
+        Useful for understanding the blast radius of an incident.
+      operationId: getAffectedEntities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - problemId
+              properties:
+                problemId:
+                  type: string
+                  description: The Dynatrace problem ID
+                  example: "P-12345"
+      responses:
+        '200':
+          description: Affected entities retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities:
+                    type: array
+                    maxItems: 10
+                    items:
+                      type: object
+                      properties:
+                        entityId:
+                          type: string
+                          example: "SERVICE-ABC123"
+                        name:
+                          type: string
+                          example: "demo-api"
+                        type:
+                          type: string
+                          example: "SERVICE"
+                  totalCount:
+                    type: integer
+                    description: Total number of affected entities
+                    example: 3
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /query_metrics:
+    post:
+      summary: Query metrics for an entity
+      description: |
+        Queries time-series metrics from Dynatrace for a specific entity.
+        Returns statistical summary (min, max, avg) and recent data points.
+        Useful for analyzing performance trends and identifying anomalies.
+      operationId: queryMetrics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entityId
+                - metricSelector
+              properties:
+                entityId:
+                  type: string
+                  description: The Dynatrace entity ID
+                  example: "SERVICE-ABC123"
+                metricSelector:
+                  type: string
+                  description: |
+                    Dynatrace metric selector (e.g., "builtin:service.response.time", "builtin:service.errors.total.rate")
+                  example: "builtin:service.response.time"
+                from:
+                  type: string
+                  description: Start time (relative or absolute)
+                  default: "now-10m"
+                  example: "now-10m"
+                to:
+                  type: string
+                  description: End time (relative or absolute)
+                  default: "now"
+                  example: "now"
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metricId:
+                    type: string
+                    example: "builtin:service.response.time"
+                  dataPoints:
+                    type: integer
+                    description: Number of data points returned
+                    example: 10
+                  statistics:
+                    type: object
+                    properties:
+                      avg:
+                        type: number
+                        format: float
+                        example: 245.67
+                      max:
+                        type: number
+                        format: float
+                        example: 523.89
+                      min:
+                        type: number
+                        format: float
+                        example: 102.34
+                  rawValues:
+                    type: array
+                    description: Last 10 data points [timestamp, value]
+                    maxItems: 10
+                    items:
+                      type: array
+                      items:
+                        type: number
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /fetch_logs:
+    post:
+      summary: Fetch logs for an entity
+      description: |
+        Fetches recent logs from Dynatrace for a specific entity.
+        Returns up to 20 log entries sorted by timestamp (newest first).
+        Supports optional filtering by log content.
+      operationId: fetchLogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entityId
+              properties:
+                entityId:
+                  type: string
+                  description: The Dynatrace entity ID
+                  example: "SERVICE-ABC123"
+                from:
+                  type: string
+                  description: Start time (relative or absolute)
+                  default: "now-10m"
+                  example: "now-10m"
+                to:
+                  type: string
+                  description: End time (relative or absolute)
+                  default: "now"
+                  example: "now"
+                filter:
+                  type: string
+                  description: Optional content filter (e.g., "error", "exception")
+                  example: "error"
+      responses:
+        '200':
+          description: Logs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalCount:
+                    type: integer
+                    description: Total number of matching logs
+                    example: 47
+                  logs:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      properties:
+                        timestamp:
+                          type: integer
+                          format: int64
+                          description: Unix timestamp in milliseconds
+                          example: 1717689600000
+                        severity:
+                          type: string
+                          example: "ERROR"
+                        content:
+                          type: string
+                          example: "TypeError: Cannot read properties of undefined (reading 'userId')"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /write_reasoning_step:
+    post:
+      summary: Write reasoning step to Firestore
+      description: |
+        Documents the agent's reasoning process by writing a step to Firestore.
+        This creates a visible audit trail of the agent's investigation in the dashboard.
+        Each step includes the phase, observations, and any tool calls made.
+      operationId: writeReasoningStep
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - incidentId
+                - phase
+                - label
+                - content
+              properties:
+                incidentId:
+                  type: string
+                  description: The DevPulse incident ID
+                  example: "P-12345-1717689600000"
+                phase:
+                  type: string
+                  description: Current phase of investigation
+                  enum: [observe, correlate, hypothesize, recommend, execute, waiting]
+                  example: "observe"
+                label:
+                  type: string
+                  description: Short label for this reasoning step
+                  example: "Checking error rate"
+                content:
+                  type: string
+                  description: Detailed reasoning content (markdown supported)
+                  example: "Error rate is 24.5%, which is 12x higher than baseline. This indicates a recent regression."
+                toolCalls:
+                  type: array
+                  description: List of tool calls made in this step
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "query_metrics"
+                      result:
+                        type: string
+                        example: "avg: 24.5%, max: 47.2%"
+                logLines:
+                  type: array
+                  description: Relevant log lines
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Reasoning step written successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  step:
+                    type: object
+                    description: The created step document
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "problemId is required"
+
+  securitySchemes:
+    none:
+      type: http
+      scheme: bearer
+      description: No authentication required (services are allow-unauthenticated for demo)
+
+security:
+  - none: []
+
+tags:
+  - name: Problem Investigation
+    description: Tools for investigating Dynatrace problems
+  - name: Observability
+    description: Tools for querying metrics and logs
+  - name: Reasoning
+    description: Tools for documenting agent reasoning
