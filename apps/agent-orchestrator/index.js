@@ -91,6 +91,85 @@ exports.runReasoningLoop = onRequest(async (req, res) => {
   }
 });
 
+// ─── Execute Approved Action (HTTP Endpoint) ─────────────────────────
+// Called by dashboard after user approves/rejects a recommendation
+
+exports.executeApprovedAction = onRequest(async (req, res) => {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { incidentId, decision } = req.body.data || req.body;
+
+  if (!incidentId || !decision) {
+    return res.status(400).json({ error: "incidentId and decision are required" });
+  }
+
+  console.log(`[approval] Processing ${decision} for incident ${incidentId}`);
+
+  try {
+    const incidentRef = db.collection("incidents").doc(incidentId);
+    const incident = await incidentRef.get();
+
+    if (!incident.exists) {
+      return res.status(404).json({ error: `Incident ${incidentId} not found` });
+    }
+
+    const incidentData = incident.data();
+
+    // Handle approval
+    if (decision === "approved") {
+      console.log(`[approval] Executing approved action for incident ${incidentId}`);
+
+      // Execute the action
+      await executePhase_action(incidentId, incidentRef, incidentData);
+
+      // Verify the result (if applicable)
+      if (incidentData.recommendation?.action === "ROLLBACK" && incidentData.dynatraceProblemId) {
+        await verifyPhase(incidentId, incidentData.dynatraceProblemId, incidentRef);
+      }
+
+      console.log(`[approval] Successfully executed action for incident ${incidentId}`);
+      return res.status(200).json({ success: true, message: "Action executed successfully" });
+
+    } else if (decision === "rejected") {
+      console.log(`[approval] Action rejected for incident ${incidentId}`);
+
+      await db.collection("incidents").doc(incidentId).collection("steps").add({
+        phase: "execute",
+        label: "Action rejected",
+        content: "Human rejected the recommendation. Escalating to on-call engineer.",
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      await incidentRef.update({
+        status: "escalated",
+        "reasoningState.phase": "complete",
+      });
+
+      return res.status(200).json({ success: true, message: "Incident escalated" });
+    }
+
+    return res.status(400).json({ error: `Invalid decision: ${decision}` });
+
+  } catch (error) {
+    console.error(`[approval] Error processing approval for incident ${incidentId}:`, error);
+
+    try {
+      await db.collection("incidents").doc(incidentId).collection("steps").add({
+        phase: "execute",
+        label: "Execution failed",
+        content: `Error executing approved action: ${error.message}`,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } catch (firestoreError) {
+      console.error("[approval] Failed to write error to Firestore:", firestoreError);
+    }
+
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── Phase Execution ──────────────────────────────────────────────────
 
 async function executePhase(incidentId, problemId, phase, incidentData) {
@@ -352,7 +431,7 @@ async function recommendPhase(incidentId, incidentRef, incidentData) {
   });
 
   // Post to Slack (if configured)
-  if (recommendation.requiresApproval && process.env.SLACK_WEBHOOK_URL) {
+  if (process.env.SLACK_WEBHOOK_URL) {
     await postToSlack(incidentId, incidentData, hypothesis, recommendation);
   }
 

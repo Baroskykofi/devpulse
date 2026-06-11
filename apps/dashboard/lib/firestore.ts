@@ -194,7 +194,31 @@ export async function updateApproval(
   incidentId: string,
   decision: "approved" | "rejected"
 ): Promise<void> {
+  // Update Firestore first
   await updateDoc(doc(db, "incidents", incidentId), {
     approvalStatus: decision,
   });
+
+  // Call orchestrator to execute the action
+  const EXECUTE_URL = "https://agent-execute-approval-rdjnrwvsgq-uc.a.run.app";
+
+  try {
+    const response = await fetch(EXECUTE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ incidentId, decision }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error("[approval] Failed to execute action:", error);
+      throw new Error(`Failed to execute action: ${error.error || response.statusText}`);
+    }
+
+    console.log(`[approval] Successfully triggered ${decision} execution for ${incidentId}`);
+  } catch (error) {
+    console.error("[approval] Error calling execute endpoint:", error);
+    // Don't throw - the approval status is already updated in Firestore
+    // The user will see the error in console but the UI won't break
+  }
 }
