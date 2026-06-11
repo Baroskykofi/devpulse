@@ -129,3 +129,4 @@ See `.env.example` at the repo root for a complete list with descriptions.
 
 MIT
 test
+test deployment
